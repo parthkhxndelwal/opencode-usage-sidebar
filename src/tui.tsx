@@ -14,7 +14,6 @@ import {
   budgetDetailFor,
   dayKey,
   effectiveAllowance,
-  isBreached,
   providerShortName,
   trackBurns,
   type BurnStore,
@@ -393,9 +392,8 @@ export default Plugin.define({
             });
             if (allowance === undefined) continue;
             tracked2[result.providerId] = { delta, allowance };
-            if (isBreached(delta, allowance)) {
-              next[result.providerId] = { delta, allowance };
-            }
+            // Preview: show the warning unconditionally (breach check off).
+            next[result.providerId] = { delta, allowance };
           }
           setBurn(tracked2);
           setBreaches(next);
