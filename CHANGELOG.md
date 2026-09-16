@@ -7,6 +7,12 @@ Format follows Keep a Changelog; versions follow SemVer.
 
 ### Added
 
+- Daily burn budgets on used-percentage points (no dollars): per-provider
+  `budgets` caps plus a global `maxDailyFraction` relative cap (percent of
+  remaining at day start; e.g. 5% of 90% remaining = 4.5pts). Baselines
+  persist in plugin storage per local day; quota resets rebase.
+- Breach warnings as a sidebar banner and a `session.composer.top` line
+  above the composer. No toasts.
 - Accordion reset dates: click a provider title to expand/collapse its
   `Resets …` line (Go monthly, Codex weekly, Copilot monthly).
 - Low-quota signal: usage line turns light yellow at ≤20% remaining,

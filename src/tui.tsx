@@ -3,6 +3,15 @@ import { For, Show, createSignal, type Accessor } from "solid-js";
 import { resolveConfig } from "./config.js";
 import { formatAge } from "./format.js";
 import {
+  EMPTY_BURN_STORE,
+  dayKey,
+  effectiveAllowance,
+  isBreached,
+  providerShortName,
+  trackBurns,
+  type BurnStore,
+} from "./budgets.js";
+import {
   QUOTA_CRIT_COLOR,
   QUOTA_WARN_COLOR,
   displayWindow,
@@ -50,6 +59,7 @@ function UsageSidebar(props: {
   refreshing: Accessor<boolean>;
   lastRefreshed: Accessor<number | undefined>;
   tick: Accessor<number>;
+  breaches: Accessor<Record<string, { delta: number; allowance: number }>>;
   onRefresh: () => Promise<void>;
 }) {
   const context = usePlugin();
@@ -60,9 +70,25 @@ function UsageSidebar(props: {
   const [expanded, setExpanded] = createSignal<Record<string, boolean>>({});
   const toggle = (id: string) =>
     setExpanded((current) => ({ ...current, [id]: !current[id] }));
+  const breachText = () => {
+    const entries = Object.entries(props.breaches());
+    if (entries.length === 0) return undefined;
+    const parts = entries.map(
+      ([id, breach]) =>
+        `${providerShortName(id as ProviderId)} +${breach.delta.toFixed(1)}/${breach.allowance.toFixed(1)}pts`,
+    );
+    return `⚠ Over daily budget: ${parts.join(" · ")}`;
+  };
 
   return (
     <box flexDirection="column" width="100%">
+      <Show when={breachText()}>
+        {(text) => (
+          <box paddingBottom={1}>
+            <text fg={QUOTA_CRIT_COLOR}>{text()}</text>
+          </box>
+        )}
+      </Show>
       <box
         flexDirection="row"
         width="100%"
@@ -245,6 +271,16 @@ export default Plugin.define({
     const [states, setStates] = createSignal<StateMap>(
       initialState(config.providers),
     );
+    const [breaches, setBreaches] = createSignal<
+      Record<string, { delta: number; allowance: number }>
+    >({});
+    const budgetsEnabled =
+      Object.keys(config.budgetCaps).length > 0 ||
+      config.maxDailyFraction !== undefined;
+    const [burnStore, setBurnStore] = context.storage.store<BurnStore>(
+      "daily-burn",
+      { initial: EMPTY_BURN_STORE },
+    );
     const [refreshing, setRefreshing] = createSignal(false);
     const [lastRefreshed, setLastRefreshed] = createSignal<number>();
     const [tick, setTick] = createSignal(0);
@@ -284,6 +320,38 @@ export default Plugin.define({
             ]),
           ) as StateMap,
         );
+        if (budgetsEnabled && !disposed) {
+          const today = dayKey();
+          const readings = results.flatMap((result) => {
+            const used = displayWindow(result)?.usedPercent;
+            return typeof used === "number" && Number.isFinite(used)
+              ? [{ id: result.providerId, used }]
+              : [];
+          });
+          const snapshot: BurnStore = {
+            date: burnStore.date,
+            baselines: { ...burnStore.baselines },
+          };
+          const tracked = trackBurns(snapshot, today, readings);
+          await setBurnStore((draft) => {
+            draft.date = tracked.store.date;
+            draft.baselines = tracked.store.baselines;
+          });
+          const next: Record<string, { delta: number; allowance: number }> = {};
+          for (const result of results) {
+            const delta = tracked.deltas[result.providerId];
+            if (delta === undefined) continue;
+            const allowance = effectiveAllowance({
+              perProviderCap: config.budgetCaps[result.providerId],
+              globalFraction: config.maxDailyFraction,
+              baselineUsed: tracked.store.baselines[result.providerId],
+            });
+            if (allowance !== undefined && isBreached(delta, allowance)) {
+              next[result.providerId] = { delta, allowance };
+            }
+          }
+          setBreaches(next);
+        }
         setLastRefreshed(Date.now());
       } finally {
         if (!disposed) {
@@ -316,8 +384,28 @@ export default Plugin.define({
           refreshing={refreshing}
           lastRefreshed={lastRefreshed}
           tick={tick}
+          breaches={breaches}
           onRefresh={() => refresh()}
         />
+      ),
+    });
+
+    const breachEntries = () => Object.entries(breaches());
+    const unregisterComposer = context.ui.slot({
+      append: "session.composer.top",
+      render: () => (
+        <Show when={breachEntries().length > 0}>
+          <box width="100%">
+            <text fg={QUOTA_CRIT_COLOR}>
+              {`⚠ Over daily budget: ${breachEntries()
+                .map(
+                  ([id, breach]) =>
+                    `${providerShortName(id as ProviderId)} +${breach.delta.toFixed(1)}/${breach.allowance.toFixed(1)}pts today`,
+                )
+                .join(" · ")}`}
+            </text>
+          </box>
+        </Show>
       ),
     });
 
@@ -326,6 +414,7 @@ export default Plugin.define({
       clearInterval(interval);
       clearInterval(pulse);
       unregister();
+      unregisterComposer();
     };
   },
 });

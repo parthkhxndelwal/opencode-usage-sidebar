@@ -3,7 +3,7 @@
 TUI `sidebar.content` panel showing remaining quota for:
 
 - OpenCode Go (`% monthly left`)
-- Codex / ChatGPT (`% weekly left · resets …`)
+- Codex / ChatGPT (`% weekly left`)
 - GitHub Copilot (`% monthly left`)
 
 API-only. No scraping, no token writes, no context pollution. Refreshes on an
@@ -43,10 +43,18 @@ Restart OpenCode after adding the entry.
 }
 ```
 
-| Option           | Type       | Default   | Notes                                             |
-| ---------------- | ---------- | --------- | ------------------------------------------------- |
-| `providers`      | `string[]` | all three | Unknown ids are ignored. Empty falls back to all. |
-| `refreshMinutes` | `number`   | `3`       | Clamped to 1–60.                                  |
+| Option             | Type       | Default   | Notes                                                                                                                                                                                 |
+| ------------------ | ---------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `providers`        | `string[]` | all three | Unknown ids are ignored. Empty falls back to all.                                                                                                                                     |
+| `refreshMinutes`   | `number`   | `3`       | Clamped to 1–60.                                                                                                                                                                      |
+| `budgets`          | `object`   | off       | Per-provider daily burn caps in percentage points, e.g. `{ "opencode-go": 30 }`. Values must be 0–100.                                                                                |
+| `maxDailyFraction` | `number`   | off       | Global relative cap: percent of remaining quota at day start allowed per day. E.g. `5` with 90% remaining allows 4.5pts. Effective allowance is the min of the two when both are set. |
+
+Daily burn is tracked from the displayed window's `usedPercent` against a
+local-day baseline persisted in plugin storage (survives restarts). Quota
+window resets rebase the baseline instead of counting negative burn. Breaches
+show as a banner in the sidebar and a warning above the session composer
+(`session.composer.top`). No toasts.
 
 ## Authentication
 
