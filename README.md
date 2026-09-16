@@ -7,7 +7,11 @@ TUI `sidebar.content` panel showing remaining quota for:
 - GitHub Copilot (`% monthly left`)
 
 API-only. No scraping, no token writes, no context pollution. Refreshes on an
-interval; click the `↻` header to refresh manually.
+interval; click the `↻` header to refresh manually. Click a provider title
+(`▸`) to expand its reset date; click again (`▾`) to collapse.
+
+Usage lines turn light yellow (`#FDE047`) at ≤20% remaining and orange
+(`#FB923C`) at ≤5% remaining.
 
 ## Install
 

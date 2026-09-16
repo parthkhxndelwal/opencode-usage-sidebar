@@ -1,7 +1,14 @@
 import { Plugin, usePlugin } from "@opencode/plugin/tui";
 import { For, Show, createSignal, type Accessor } from "solid-js";
 import { resolveConfig } from "./config.js";
-import { formatAge, formatReset } from "./format.js";
+import { formatAge } from "./format.js";
+import {
+  QUOTA_CRIT_COLOR,
+  QUOTA_WARN_COLOR,
+  displayWindow,
+  quotaLevelForUsed,
+  resetDetailFor,
+} from "./quota.js";
 import {
   PROVIDERS,
   fetchAllProviderUsage,
@@ -50,6 +57,9 @@ function UsageSidebar(props: {
   const subdued = theme.text.subdued;
   const errorFg = theme.text.feedback.error.default;
   const tick = props.tick;
+  const [expanded, setExpanded] = createSignal<Record<string, boolean>>({});
+  const toggle = (id: string) =>
+    setExpanded((current) => ({ ...current, [id]: !current[id] }));
 
   return (
     <box flexDirection="column" width="100%">
@@ -81,13 +91,21 @@ function UsageSidebar(props: {
 
       <For each={props.providers()}>
         {(provider) => (
-          <ProviderRow state={() => props.states()[provider.id]} />
+          <ProviderRow
+            state={() => props.states()[provider.id]}
+            expanded={() => expanded()[provider.id] === true}
+            onToggle={() => toggle(provider.id)}
+          />
         )}
       </For>
     </box>
   );
 
-  function ProviderRow(props: { state: Accessor<ProviderState> }) {
+  function ProviderRow(props: {
+    state: Accessor<ProviderState>;
+    expanded: Accessor<boolean>;
+    onToggle: () => void;
+  }) {
     const state = props.state;
     const line = () => {
       const s = state();
@@ -95,10 +113,28 @@ function UsageSidebar(props: {
       if (s.providerId === "codex") return codexLine(s);
       return copilotLine(s);
     };
+    const lineFg = () => {
+      const level = quotaLevelForUsed(displayWindow(state())?.usedPercent);
+      if (level === "critical") return QUOTA_CRIT_COLOR;
+      if (level === "warn") return QUOTA_WARN_COLOR;
+      return subdued;
+    };
 
     return (
       <box flexDirection="column" paddingTop={1} width="100%">
-        <ProviderTitle name={state().providerName} loading={state().loading} />
+        <box
+          onMouseUp={() => props.onToggle()}
+          flexDirection="row"
+          width="100%"
+          justifyContent="space-between"
+          alignItems="center"
+        >
+          <ProviderTitle
+            name={state().providerName}
+            loading={state().loading}
+          />
+          <text fg={subdued}>{props.expanded() ? "▾" : "▸"}</text>
+        </box>
 
         <Show
           when={state().ok && state().windows.length > 0 && line()}
@@ -112,7 +148,11 @@ function UsageSidebar(props: {
             </text>
           }
         >
-          {(text) => <text fg={subdued}>{text()}</text>}
+          {(text) => <text fg={lineFg()}>{text()}</text>}
+        </Show>
+
+        <Show when={props.expanded() && resetDetailFor(state())}>
+          {(detail) => <text fg={subdued}>{detail()}</text>}
         </Show>
       </box>
     );
@@ -174,9 +214,6 @@ function UsageSidebar(props: {
         ? undefined
         : Math.round(100 - weekly.usedPercent);
     if (pct === undefined) return state.error ?? "no data";
-    if (weekly?.resetAt) {
-      return `${pct}% weekly left · resets ${formatReset(weekly.resetAt)}`;
-    }
     return `${pct}% weekly left`;
   }
 

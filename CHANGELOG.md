@@ -3,6 +3,20 @@
 All notable changes to `opencode-usage-sidebar` are documented here.
 Format follows Keep a Changelog; versions follow SemVer.
 
+## [Unreleased]
+
+### Added
+
+- Accordion reset dates: click a provider title to expand/collapse its
+  `Resets …` line (Go monthly, Codex weekly, Copilot monthly).
+- Low-quota signal: usage line turns light yellow at ≤20% remaining,
+  orange at ≤5%.
+
+### Changed
+
+- Codex one-liner no longer shows the reset inline; it lives in the
+  accordion detail.
+
 ## [0.1.0] - 2026-09-16
 
 ### Added
