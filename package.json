@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "opencode-usage-sidebar",
+  "version": "0.1.0",
+  "description": "OpenCode TUI sidebar for OpenCode Go, Codex, and GitHub Copilot usage.",
+  "license": "MIT",
+  "type": "module",
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "usage",
+    "tui",
+    "sidebar"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "exports": {
+    ".": "./index.ts",
+    "./tui": "./tui.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write src README.md package.json tsconfig.json CHANGELOG.md",
+    "format:check": "prettier --check src README.md package.json tsconfig.json CHANGELOG.md"
+  },
+  "dependencies": {
+    "@opencode/plugin": "^2.0.3"
+  },
+  "peerDependencies": {
+    "@opentui/core": ">=0.5.8",
+    "@opentui/solid": ">=0.5.8",
+    "solid-js": ">=1.9.0"
+  },
+  "devDependencies": {
+    "@opentui/core": "^0.5.10",
+    "@opentui/solid": "^0.5.10",
+    "@types/node": "^24.0.0",
+    "prettier": "^3.6.2",
+    "solid-js": "1.9.12",
+    "typescript": "^5.8.2",
+    "vitest": "^5.0.1"
+  }
+}
