@@ -56,6 +56,15 @@ window resets rebase the baseline instead of counting negative burn. Breaches
 show as a banner in the sidebar and a warning above the session composer
 (`session.composer.top`). No toasts.
 
+## AI Usage Budget (TUI setting)
+
+Open the command palette and run **AI Usage Budget** to edit budgets without
+touching the config file: pick a provider (shows current cap and today's
+burn), the global relative cap, or reset everything to the config file.
+Values set here persist in plugin storage and override the config file;
+`off` disables that budget, and reset clears all overrides. Changes apply on
+the next refresh.
+
 ## Authentication
 
 Connect providers in OpenCode first with `/connect`. The plugin only reads

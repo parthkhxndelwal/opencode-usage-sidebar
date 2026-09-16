@@ -13,6 +13,9 @@ Format follows Keep a Changelog; versions follow SemVer.
   persist in plugin storage per local day; quota resets rebase.
 - Breach warnings as a sidebar banner and a `session.composer.top` line
   above the composer. No toasts.
+- **AI Usage Budget** palette command: edit per-provider caps and the global
+  relative cap in the TUI via guided dialogs. Values persist in plugin
+  storage, override the config file, and apply on next refresh.
 - Accordion reset dates: click a provider title to expand/collapse its
   `Resets …` line (Go monthly, Codex weekly, Copilot monthly).
 - Low-quota signal: usage line turns light yellow at ≤20% remaining,

@@ -3,6 +3,13 @@ import { For, Show, createSignal, type Accessor } from "solid-js";
 import { resolveConfig } from "./config.js";
 import { formatAge } from "./format.js";
 import {
+  EMPTY_BUDGET_SETTINGS,
+  effectiveBudgetCaps,
+  effectiveMaxDailyFraction,
+  parseBudgetInput,
+  sanitizeStoredSettings,
+} from "./budget-settings.js";
+import {
   EMPTY_BURN_STORE,
   dayKey,
   effectiveAllowance,
@@ -274,13 +281,31 @@ export default Plugin.define({
     const [breaches, setBreaches] = createSignal<
       Record<string, { delta: number; allowance: number }>
     >({});
-    const budgetsEnabled =
-      Object.keys(config.budgetCaps).length > 0 ||
-      config.maxDailyFraction !== undefined;
+    const [burnDeltas, setBurnDeltas] = createSignal<
+      Partial<Record<ProviderId, number>>
+    >({});
     const [burnStore, setBurnStore] = context.storage.store<BurnStore>(
       "daily-burn",
       { initial: EMPTY_BURN_STORE },
     );
+    const [budgetSettings, setBudgetSettings] = context.storage.store(
+      "budget-settings",
+      { initial: EMPTY_BUDGET_SETTINGS },
+    );
+    const effectiveCaps = () =>
+      effectiveBudgetCaps(
+        config.budgetCaps,
+        sanitizeStoredSettings(budgetSettings),
+      );
+    const effectiveFraction = () =>
+      effectiveMaxDailyFraction(
+        config.maxDailyFraction,
+        sanitizeStoredSettings(budgetSettings),
+      );
+    const budgetsEnabled = () => {
+      const caps = effectiveCaps();
+      return Object.keys(caps).length > 0 || effectiveFraction() !== undefined;
+    };
     const [refreshing, setRefreshing] = createSignal(false);
     const [lastRefreshed, setLastRefreshed] = createSignal<number>();
     const [tick, setTick] = createSignal(0);
@@ -320,7 +345,7 @@ export default Plugin.define({
             ]),
           ) as StateMap,
         );
-        if (budgetsEnabled && !disposed) {
+        if (budgetsEnabled() && !disposed) {
           const today = dayKey();
           const readings = results.flatMap((result) => {
             const used = displayWindow(result)?.usedPercent;
@@ -337,19 +362,22 @@ export default Plugin.define({
             draft.date = tracked.store.date;
             draft.baselines = tracked.store.baselines;
           });
+          const caps = effectiveCaps();
+          const fraction = effectiveFraction();
           const next: Record<string, { delta: number; allowance: number }> = {};
           for (const result of results) {
             const delta = tracked.deltas[result.providerId];
             if (delta === undefined) continue;
             const allowance = effectiveAllowance({
-              perProviderCap: config.budgetCaps[result.providerId],
-              globalFraction: config.maxDailyFraction,
+              perProviderCap: caps[result.providerId],
+              globalFraction: fraction,
               baselineUsed: tracked.store.baselines[result.providerId],
             });
             if (allowance !== undefined && isBreached(delta, allowance)) {
               next[result.providerId] = { delta, allowance };
             }
           }
+          setBurnDeltas({ ...tracked.deltas });
           setBreaches(next);
         }
         setLastRefreshed(Date.now());
@@ -374,6 +402,123 @@ export default Plugin.define({
       () => void refresh(),
       config.refreshMinutes * 60_000,
     );
+
+    const openBudgetEditor = async () => {
+      const stored = sanitizeStoredSettings(budgetSettings);
+      const caps = effectiveBudgetCaps(config.budgetCaps, stored);
+      const fraction = effectiveMaxDailyFraction(
+        config.maxDailyFraction,
+        stored,
+      );
+      const deltas = burnDeltas();
+      const choice = await context.ui.dialog.select({
+        title: "AI Usage Budget",
+        placeholder: "Choose a budget to edit",
+        options: [
+          ...visibleProviders.map((p) => {
+            const burned = deltas[p.id];
+            const cap = caps[p.id];
+            return {
+              title: p.name,
+              value: `provider:${p.id}`,
+              description: `${cap !== undefined ? `${cap}pts/day` : "no cap"}${burned !== undefined ? ` · burned ${burned.toFixed(1)} today` : ""}`,
+            };
+          }),
+          {
+            title: "Global relative cap",
+            value: "global",
+            description:
+              fraction !== undefined ? `${fraction}% of remaining/day` : "off",
+          },
+          {
+            title: "Reset to config file",
+            value: "reset",
+            description: "Clear budgets set here",
+          },
+        ],
+      });
+      if (choice === undefined) return;
+      if (choice === "reset") {
+        await setBudgetSettings((draft) => {
+          draft.caps = {};
+          draft.maxDailyFraction = undefined;
+        });
+        void refresh();
+        return;
+      }
+      if (choice === "global") {
+        for (;;) {
+          const input = await context.ui.dialog.prompt({
+            title: "Global relative cap",
+            description: "Percent of remaining quota allowed per day, or off.",
+            value: fraction !== undefined ? `${fraction}` : "",
+            placeholder: "e.g. 5, or off",
+          });
+          if (input === undefined) return;
+          const parsed = parseBudgetInput(input);
+          if (parsed === undefined) {
+            await context.ui.dialog.alert({
+              title: "Invalid budget",
+              message: "Enter a number 0–100 or off.",
+            });
+            continue;
+          }
+          await setBudgetSettings((draft) => {
+            draft.maxDailyFraction = parsed === "off" ? null : parsed;
+          });
+          void refresh();
+          return;
+        }
+      }
+      const provider = visibleProviders.find(
+        (p) => `provider:${p.id}` === choice,
+      );
+      if (!provider) return;
+      const burned = deltas[provider.id];
+      const current = caps[provider.id];
+      for (;;) {
+        const input = await context.ui.dialog.prompt({
+          title: `Daily burn cap — ${provider.name}`,
+          description: `Percentage points per day, or off.${burned !== undefined ? ` Burned ${burned.toFixed(1)} today.` : ""}`,
+          value: current !== undefined ? `${current}` : "",
+          placeholder: "e.g. 30, or off",
+        });
+        if (input === undefined) return;
+        const parsed = parseBudgetInput(input);
+        if (parsed === undefined) {
+          await context.ui.dialog.alert({
+            title: "Invalid budget",
+            message: "Enter a number 0–100 or off.",
+          });
+          continue;
+        }
+        const value = parsed === "off" ? null : parsed;
+        await setBudgetSettings((draft) => {
+          draft.caps[provider.id] = value;
+        });
+        void refresh();
+        return;
+      }
+    };
+
+    const unregisterApp = context.ui.slot({
+      append: "app",
+      render: () => {
+        context.keymap.layer(() => ({
+          mode: "global",
+          commands: [
+            {
+              id: "opencode-usage-sidebar.budget",
+              title: "AI Usage Budget",
+              group: "Usage",
+              palette: true,
+              run: () => void openBudgetEditor(),
+            },
+          ],
+        }));
+        return null;
+      },
+    });
 
     const unregister = context.ui.slot({
       append: "sidebar.content",
@@ -414,6 +559,7 @@ export default Plugin.define({
       clearInterval(interval);
       clearInterval(pulse);
       unregister();
+      unregisterApp();
       unregisterComposer();
     };
   },
