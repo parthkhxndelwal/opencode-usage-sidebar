@@ -51,22 +51,6 @@ describe("resolveConfig", () => {
     expect(resolveConfig({})).toEqual({
       providers: ["opencode-go", "codex", "github-copilot"],
       refreshMinutes: 3,
-      budgetCaps: {},
-      maxDailyFraction: undefined,
-    });
-  });
-
-  it("resolves budgets", () => {
-    expect(
-      resolveConfig({
-        budgets: { "opencode-go": 30 },
-        maxDailyFraction: 5,
-      }),
-    ).toEqual({
-      providers: ["opencode-go", "codex", "github-copilot"],
-      refreshMinutes: 3,
-      budgetCaps: { "opencode-go": 30 },
-      maxDailyFraction: 5,
     });
   });
 });

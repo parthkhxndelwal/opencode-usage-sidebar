@@ -7,21 +7,14 @@ Format follows Keep a Changelog; versions follow SemVer.
 
 ### Added
 
-- Daily burn budgets on used-percentage points (no dollars): per-provider
-  `budgets` caps plus a global `maxDailyFraction` relative cap (percent of
-  remaining at day start; e.g. 5% of 90% remaining = 4.5pts). Baselines
-  persist in plugin storage per local day; quota resets rebase.
-- Breach warnings as a sidebar banner and a `session.composer.top` line
-  above the composer. No toasts.
-- **AI Usage Budget** palette command: edit per-provider caps and the global
-  relative cap in the TUI via guided dialogs. Values persist in plugin
-  storage, override the config file, and apply on next refresh.
 - Accordion reset dates: click a provider title to expand/collapse its
-  `Resets …` line (Go monthly, Codex weekly, Copilot monthly), plus the
-  daily budget remaining (`2.4/4.5pts budget left today`) when a budget
-  is configured.
-- Low-quota signal: usage line turns light yellow at ≤20% remaining,
-  orange at ≤5%.
+  `Resets …` line (Go monthly, Codex weekly, Copilot monthly).
+
+### Removed
+
+- Daily burn budgets, breach warnings (`sidebar` banner +
+  `session.composer.top` line), low-quota color signal, and the
+  **AI Usage Budget** palette command.
 
 ### Changed
 

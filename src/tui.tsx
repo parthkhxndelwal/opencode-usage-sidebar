@@ -2,29 +2,7 @@ import { Plugin, usePlugin } from "@opencode/plugin/tui";
 import { For, Show, createSignal, type Accessor } from "solid-js";
 import { resolveConfig } from "./config.js";
 import { formatAge } from "./format.js";
-import {
-  EMPTY_BUDGET_SETTINGS,
-  effectiveBudgetCaps,
-  effectiveMaxDailyFraction,
-  parseBudgetInput,
-  sanitizeStoredSettings,
-} from "./budget-settings.js";
-import {
-  EMPTY_BURN_STORE,
-  budgetDetailFor,
-  dayKey,
-  effectiveAllowance,
-  providerShortName,
-  trackBurns,
-  type BurnStore,
-} from "./budgets.js";
-import {
-  QUOTA_CRIT_COLOR,
-  QUOTA_WARN_COLOR,
-  displayWindow,
-  quotaLevelForUsed,
-  resetDetailFor,
-} from "./quota.js";
+import { resetDetailFor } from "./quota.js";
 import {
   PROVIDERS,
   fetchAllProviderUsage,
@@ -66,10 +44,6 @@ function UsageSidebar(props: {
   refreshing: Accessor<boolean>;
   lastRefreshed: Accessor<number | undefined>;
   tick: Accessor<number>;
-  breaches: Accessor<Record<string, { delta: number; allowance: number }>>;
-  burn: Accessor<
-    Partial<Record<ProviderId, { delta: number; allowance: number }>>
-  >;
   onRefresh: () => Promise<void>;
 }) {
   const context = usePlugin();
@@ -80,25 +54,9 @@ function UsageSidebar(props: {
   const [expanded, setExpanded] = createSignal<Record<string, boolean>>({});
   const toggle = (id: string) =>
     setExpanded((current) => ({ ...current, [id]: !current[id] }));
-  const breachText = () => {
-    const entries = Object.entries(props.breaches());
-    if (entries.length === 0) return undefined;
-    const parts = entries.map(
-      ([id, breach]) =>
-        `${providerShortName(id as ProviderId)} +${breach.delta.toFixed(1)}/${breach.allowance.toFixed(1)}pts`,
-    );
-    return `⚠ Over daily budget: ${parts.join(" · ")}`;
-  };
 
   return (
     <box flexDirection="column" width="100%">
-      <Show when={breachText()}>
-        {(text) => (
-          <box paddingBottom={1}>
-            <text fg={QUOTA_CRIT_COLOR}>{text()}</text>
-          </box>
-        )}
-      </Show>
       <box
         flexDirection="row"
         width="100%"
@@ -129,7 +87,6 @@ function UsageSidebar(props: {
         {(provider) => (
           <ProviderRow
             state={() => props.states()[provider.id]}
-            burn={() => props.burn()[provider.id]}
             expanded={() => expanded()[provider.id] === true}
             onToggle={() => toggle(provider.id)}
           />
@@ -140,7 +97,6 @@ function UsageSidebar(props: {
 
   function ProviderRow(props: {
     state: Accessor<ProviderState>;
-    burn: Accessor<{ delta: number; allowance: number } | undefined>;
     expanded: Accessor<boolean>;
     onToggle: () => void;
   }) {
@@ -150,17 +106,6 @@ function UsageSidebar(props: {
       if (s.providerId === "opencode-go") return goLine(s);
       if (s.providerId === "codex") return codexLine(s);
       return copilotLine(s);
-    };
-    const lineFg = () => {
-      const level = quotaLevelForUsed(displayWindow(state())?.usedPercent);
-      if (level === "critical") return QUOTA_CRIT_COLOR;
-      if (level === "warn") return QUOTA_WARN_COLOR;
-      return subdued;
-    };
-    const budgetLine = () => {
-      const tracked = props.burn();
-      if (!tracked) return undefined;
-      return budgetDetailFor(tracked.delta, tracked.allowance);
     };
 
     return (
@@ -191,14 +136,10 @@ function UsageSidebar(props: {
             </text>
           }
         >
-          {(text) => <text fg={lineFg()}>{text()}</text>}
+          {(text) => <text fg={subdued}>{text()}</text>}
         </Show>
 
         <Show when={props.expanded() && resetDetailFor(state())}>
-          {(detail) => <text fg={subdued}>{detail()}</text>}
-        </Show>
-
-        <Show when={props.expanded() && budgetLine()}>
           {(detail) => <text fg={subdued}>{detail()}</text>}
         </Show>
       </box>
@@ -292,34 +233,6 @@ export default Plugin.define({
     const [states, setStates] = createSignal<StateMap>(
       initialState(config.providers),
     );
-    const [breaches, setBreaches] = createSignal<
-      Record<string, { delta: number; allowance: number }>
-    >({});
-    const [burn, setBurn] = createSignal<
-      Partial<Record<ProviderId, { delta: number; allowance: number }>>
-    >({});
-    const [burnStore, setBurnStore] = context.storage.store<BurnStore>(
-      "daily-burn",
-      { initial: EMPTY_BURN_STORE },
-    );
-    const [budgetSettings, setBudgetSettings] = context.storage.store(
-      "budget-settings",
-      { initial: EMPTY_BUDGET_SETTINGS },
-    );
-    const effectiveCaps = () =>
-      effectiveBudgetCaps(
-        config.budgetCaps,
-        sanitizeStoredSettings(budgetSettings),
-      );
-    const effectiveFraction = () =>
-      effectiveMaxDailyFraction(
-        config.maxDailyFraction,
-        sanitizeStoredSettings(budgetSettings),
-      );
-    const budgetsEnabled = () => {
-      const caps = effectiveCaps();
-      return Object.keys(caps).length > 0 || effectiveFraction() !== undefined;
-    };
     const [refreshing, setRefreshing] = createSignal(false);
     const [lastRefreshed, setLastRefreshed] = createSignal<number>();
     const [tick, setTick] = createSignal(0);
@@ -359,45 +272,6 @@ export default Plugin.define({
             ]),
           ) as StateMap,
         );
-        if (budgetsEnabled() && !disposed) {
-          const today = dayKey();
-          const readings = results.flatMap((result) => {
-            const used = displayWindow(result)?.usedPercent;
-            return typeof used === "number" && Number.isFinite(used)
-              ? [{ id: result.providerId, used }]
-              : [];
-          });
-          const snapshot: BurnStore = {
-            date: burnStore.date,
-            baselines: { ...burnStore.baselines },
-          };
-          const tracked = trackBurns(snapshot, today, readings);
-          await setBurnStore((draft) => {
-            draft.date = tracked.store.date;
-            draft.baselines = tracked.store.baselines;
-          });
-          const caps = effectiveCaps();
-          const fraction = effectiveFraction();
-          const next: Record<string, { delta: number; allowance: number }> = {};
-          const tracked2: Partial<
-            Record<ProviderId, { delta: number; allowance: number }>
-          > = {};
-          for (const result of results) {
-            const delta = tracked.deltas[result.providerId];
-            if (delta === undefined) continue;
-            const allowance = effectiveAllowance({
-              perProviderCap: caps[result.providerId],
-              globalFraction: fraction,
-              baselineUsed: tracked.store.baselines[result.providerId],
-            });
-            if (allowance === undefined) continue;
-            tracked2[result.providerId] = { delta, allowance };
-            // Preview: show the warning unconditionally (breach check off).
-            next[result.providerId] = { delta, allowance };
-          }
-          setBurn(tracked2);
-          setBreaches(next);
-        }
         setLastRefreshed(Date.now());
       } finally {
         if (!disposed) {
@@ -421,123 +295,6 @@ export default Plugin.define({
       config.refreshMinutes * 60_000,
     );
 
-    const openBudgetEditor = async () => {
-      const stored = sanitizeStoredSettings(budgetSettings);
-      const caps = effectiveBudgetCaps(config.budgetCaps, stored);
-      const fraction = effectiveMaxDailyFraction(
-        config.maxDailyFraction,
-        stored,
-      );
-      const deltas = burn();
-      const choice = await context.ui.dialog.select({
-        title: "AI Usage Budget",
-        placeholder: "Choose a budget to edit",
-        options: [
-          ...visibleProviders.map((p) => {
-            const burned = deltas[p.id]?.delta;
-            const cap = caps[p.id];
-            return {
-              title: p.name,
-              value: `provider:${p.id}`,
-              description: `${cap !== undefined ? `${cap}pts/day` : "no cap"}${burned !== undefined ? ` · burned ${burned.toFixed(1)} today` : ""}`,
-            };
-          }),
-          {
-            title: "Global relative cap",
-            value: "global",
-            description:
-              fraction !== undefined ? `${fraction}% of remaining/day` : "off",
-          },
-          {
-            title: "Reset to config file",
-            value: "reset",
-            description: "Clear budgets set here",
-          },
-        ],
-      });
-      if (choice === undefined) return;
-      if (choice === "reset") {
-        await setBudgetSettings((draft) => {
-          draft.caps = {};
-          draft.maxDailyFraction = undefined;
-        });
-        void refresh();
-        return;
-      }
-      if (choice === "global") {
-        for (;;) {
-          const input = await context.ui.dialog.prompt({
-            title: "Global relative cap",
-            description: "Percent of remaining quota allowed per day, or off.",
-            value: fraction !== undefined ? `${fraction}` : "",
-            placeholder: "e.g. 5, or off",
-          });
-          if (input === undefined) return;
-          const parsed = parseBudgetInput(input);
-          if (parsed === undefined) {
-            await context.ui.dialog.alert({
-              title: "Invalid budget",
-              message: "Enter a number 0–100 or off.",
-            });
-            continue;
-          }
-          await setBudgetSettings((draft) => {
-            draft.maxDailyFraction = parsed === "off" ? null : parsed;
-          });
-          void refresh();
-          return;
-        }
-      }
-      const provider = visibleProviders.find(
-        (p) => `provider:${p.id}` === choice,
-      );
-      if (!provider) return;
-      const burned = deltas[provider.id]?.delta;
-      const current = caps[provider.id];
-      for (;;) {
-        const input = await context.ui.dialog.prompt({
-          title: `Daily burn cap — ${provider.name}`,
-          description: `Percentage points per day, or off.${burned !== undefined ? ` Burned ${burned.toFixed(1)} today.` : ""}`,
-          value: current !== undefined ? `${current}` : "",
-          placeholder: "e.g. 30, or off",
-        });
-        if (input === undefined) return;
-        const parsed = parseBudgetInput(input);
-        if (parsed === undefined) {
-          await context.ui.dialog.alert({
-            title: "Invalid budget",
-            message: "Enter a number 0–100 or off.",
-          });
-          continue;
-        }
-        const value = parsed === "off" ? null : parsed;
-        await setBudgetSettings((draft) => {
-          draft.caps[provider.id] = value;
-        });
-        void refresh();
-        return;
-      }
-    };
-
-    const unregisterApp = context.ui.slot({
-      append: "app",
-      render: () => {
-        context.keymap.layer(() => ({
-          mode: "global",
-          commands: [
-            {
-              id: "opencode-usage-sidebar.budget",
-              title: "AI Usage Budget",
-              group: "Usage",
-              palette: true,
-              run: () => void openBudgetEditor(),
-            },
-          ],
-        }));
-        return null;
-      },
-    });
-
     const unregister = context.ui.slot({
       append: "sidebar.content",
       render: () => (
@@ -547,29 +304,8 @@ export default Plugin.define({
           refreshing={refreshing}
           lastRefreshed={lastRefreshed}
           tick={tick}
-          breaches={breaches}
-          burn={burn}
           onRefresh={() => refresh()}
         />
-      ),
-    });
-
-    const breachEntries = () => Object.entries(breaches());
-    const unregisterComposer = context.ui.slot({
-      append: "session.composer.top",
-      render: () => (
-        <Show when={breachEntries().length > 0}>
-          <box width="100%">
-            <text fg={QUOTA_CRIT_COLOR}>
-              {`⚠ Over daily budget: ${breachEntries()
-                .map(
-                  ([id, breach]) =>
-                    `${providerShortName(id as ProviderId)} +${breach.delta.toFixed(1)}/${breach.allowance.toFixed(1)}pts today`,
-                )
-                .join(" · ")}`}
-            </text>
-          </box>
-        </Show>
       ),
     });
 
@@ -578,8 +314,6 @@ export default Plugin.define({
       clearInterval(interval);
       clearInterval(pulse);
       unregister();
-      unregisterApp();
-      unregisterComposer();
     };
   },
 });

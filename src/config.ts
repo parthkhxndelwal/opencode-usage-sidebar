@@ -1,23 +1,14 @@
 import type { ProviderId } from "./usage.js";
 import { PROVIDERS } from "./usage.js";
-import {
-  resolveBudgetCaps,
-  resolveMaxDailyFraction,
-  type BudgetCaps,
-} from "./budgets.js";
 
 export type PluginOptions = {
   providers?: unknown;
   refreshMinutes?: unknown;
-  budgets?: unknown;
-  maxDailyFraction?: unknown;
 };
 
 export type ResolvedConfig = {
   providers: ProviderId[];
   refreshMinutes: number;
-  budgetCaps: BudgetCaps;
-  maxDailyFraction: number | undefined;
 };
 
 const DEFAULT_PROVIDERS: ProviderId[] = PROVIDERS.map((p) => p.id);
@@ -47,7 +38,5 @@ export function resolveConfig(options: PluginOptions = {}): ResolvedConfig {
   return {
     providers: resolveProviders(options.providers),
     refreshMinutes: resolveRefreshMinutes(options.refreshMinutes),
-    budgetCaps: resolveBudgetCaps(options.budgets),
-    maxDailyFraction: resolveMaxDailyFraction(options.maxDailyFraction),
   };
 }
