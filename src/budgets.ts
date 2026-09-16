@@ -110,6 +110,26 @@ export function isBreached(
   );
 }
 
+// Accordion budget line: remaining allowance for today, or overage.
+export function budgetDetailFor(
+  delta: number | undefined,
+  allowance: number | undefined,
+): string | undefined {
+  if (
+    delta === undefined ||
+    allowance === undefined ||
+    !Number.isFinite(delta) ||
+    !Number.isFinite(allowance)
+  ) {
+    return undefined;
+  }
+  const remaining = allowance - delta;
+  if (remaining < 0) {
+    return `Over budget by ${(-remaining).toFixed(1)}pts today`;
+  }
+  return `${remaining.toFixed(1)}/${allowance.toFixed(1)}pts budget left today`;
+}
+
 export function providerShortName(id: ProviderId): string {
   const found = PROVIDERS.find((p) => p.id === id);
   return found ? found.name : id;

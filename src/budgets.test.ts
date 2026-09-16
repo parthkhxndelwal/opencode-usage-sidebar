@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  budgetDetailFor,
   dayKey,
   effectiveAllowance,
   isBreached,
@@ -142,5 +143,21 @@ describe("isBreached", () => {
     expect(isBreached(4.4, 4.5)).toBe(false);
     expect(isBreached(undefined, 4.5)).toBe(false);
     expect(isBreached(6, undefined)).toBe(false);
+  });
+});
+
+describe("budgetDetailFor", () => {
+  it("shows remaining budget for today", () => {
+    expect(budgetDetailFor(2.1, 4.5)).toBe("2.4/4.5pts budget left today");
+    expect(budgetDetailFor(0, 4.5)).toBe("4.5/4.5pts budget left today");
+  });
+
+  it("shows overage when breached", () => {
+    expect(budgetDetailFor(6.2, 4.5)).toBe("Over budget by 1.7pts today");
+  });
+
+  it("returns undefined without tracking", () => {
+    expect(budgetDetailFor(undefined, 4.5)).toBeUndefined();
+    expect(budgetDetailFor(2, undefined)).toBeUndefined();
   });
 });

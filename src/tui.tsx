@@ -11,6 +11,7 @@ import {
 } from "./budget-settings.js";
 import {
   EMPTY_BURN_STORE,
+  budgetDetailFor,
   dayKey,
   effectiveAllowance,
   isBreached,
@@ -67,6 +68,9 @@ function UsageSidebar(props: {
   lastRefreshed: Accessor<number | undefined>;
   tick: Accessor<number>;
   breaches: Accessor<Record<string, { delta: number; allowance: number }>>;
+  burn: Accessor<
+    Partial<Record<ProviderId, { delta: number; allowance: number }>>
+  >;
   onRefresh: () => Promise<void>;
 }) {
   const context = usePlugin();
@@ -126,6 +130,7 @@ function UsageSidebar(props: {
         {(provider) => (
           <ProviderRow
             state={() => props.states()[provider.id]}
+            burn={() => props.burn()[provider.id]}
             expanded={() => expanded()[provider.id] === true}
             onToggle={() => toggle(provider.id)}
           />
@@ -136,6 +141,7 @@ function UsageSidebar(props: {
 
   function ProviderRow(props: {
     state: Accessor<ProviderState>;
+    burn: Accessor<{ delta: number; allowance: number } | undefined>;
     expanded: Accessor<boolean>;
     onToggle: () => void;
   }) {
@@ -151,6 +157,11 @@ function UsageSidebar(props: {
       if (level === "critical") return QUOTA_CRIT_COLOR;
       if (level === "warn") return QUOTA_WARN_COLOR;
       return subdued;
+    };
+    const budgetLine = () => {
+      const tracked = props.burn();
+      if (!tracked) return undefined;
+      return budgetDetailFor(tracked.delta, tracked.allowance);
     };
 
     return (
@@ -185,6 +196,10 @@ function UsageSidebar(props: {
         </Show>
 
         <Show when={props.expanded() && resetDetailFor(state())}>
+          {(detail) => <text fg={subdued}>{detail()}</text>}
+        </Show>
+
+        <Show when={props.expanded() && budgetLine()}>
           {(detail) => <text fg={subdued}>{detail()}</text>}
         </Show>
       </box>
@@ -281,8 +296,8 @@ export default Plugin.define({
     const [breaches, setBreaches] = createSignal<
       Record<string, { delta: number; allowance: number }>
     >({});
-    const [burnDeltas, setBurnDeltas] = createSignal<
-      Partial<Record<ProviderId, number>>
+    const [burn, setBurn] = createSignal<
+      Partial<Record<ProviderId, { delta: number; allowance: number }>>
     >({});
     const [burnStore, setBurnStore] = context.storage.store<BurnStore>(
       "daily-burn",
@@ -365,6 +380,9 @@ export default Plugin.define({
           const caps = effectiveCaps();
           const fraction = effectiveFraction();
           const next: Record<string, { delta: number; allowance: number }> = {};
+          const tracked2: Partial<
+            Record<ProviderId, { delta: number; allowance: number }>
+          > = {};
           for (const result of results) {
             const delta = tracked.deltas[result.providerId];
             if (delta === undefined) continue;
@@ -373,11 +391,13 @@ export default Plugin.define({
               globalFraction: fraction,
               baselineUsed: tracked.store.baselines[result.providerId],
             });
-            if (allowance !== undefined && isBreached(delta, allowance)) {
+            if (allowance === undefined) continue;
+            tracked2[result.providerId] = { delta, allowance };
+            if (isBreached(delta, allowance)) {
               next[result.providerId] = { delta, allowance };
             }
           }
-          setBurnDeltas({ ...tracked.deltas });
+          setBurn(tracked2);
           setBreaches(next);
         }
         setLastRefreshed(Date.now());
@@ -410,13 +430,13 @@ export default Plugin.define({
         config.maxDailyFraction,
         stored,
       );
-      const deltas = burnDeltas();
+      const deltas = burn();
       const choice = await context.ui.dialog.select({
         title: "AI Usage Budget",
         placeholder: "Choose a budget to edit",
         options: [
           ...visibleProviders.map((p) => {
-            const burned = deltas[p.id];
+            const burned = deltas[p.id]?.delta;
             const cap = caps[p.id];
             return {
               title: p.name,
@@ -474,7 +494,7 @@ export default Plugin.define({
         (p) => `provider:${p.id}` === choice,
       );
       if (!provider) return;
-      const burned = deltas[provider.id];
+      const burned = deltas[provider.id]?.delta;
       const current = caps[provider.id];
       for (;;) {
         const input = await context.ui.dialog.prompt({
@@ -530,6 +550,7 @@ export default Plugin.define({
           lastRefreshed={lastRefreshed}
           tick={tick}
           breaches={breaches}
+          burn={burn}
           onRefresh={() => refresh()}
         />
       ),

@@ -17,7 +17,9 @@ Format follows Keep a Changelog; versions follow SemVer.
   relative cap in the TUI via guided dialogs. Values persist in plugin
   storage, override the config file, and apply on next refresh.
 - Accordion reset dates: click a provider title to expand/collapse its
-  `Resets …` line (Go monthly, Codex weekly, Copilot monthly).
+  `Resets …` line (Go monthly, Codex weekly, Copilot monthly), plus the
+  daily budget remaining (`2.4/4.5pts budget left today`) when a budget
+  is configured.
 - Low-quota signal: usage line turns light yellow at ≤20% remaining,
   orange at ≤5%.
 
